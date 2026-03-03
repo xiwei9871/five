@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { createEmptyBoard, placeStone } from './board';
-import { chooseEasyMove, getCandidateMoves } from './ai';
+import { chooseEasyMove, getCandidateMoves, scoreMove } from './ai';
 
 describe('easy ai', () => {
   test('returns the center point on an empty board', () => {
@@ -38,5 +38,29 @@ describe('easy ai', () => {
     }
 
     expect([{ x: 3, y: 8 }, { x: 8, y: 8 }]).toContainEqual(chooseEasyMove(board, 'white'));
+  });
+
+  test('scores an immediate winning move above a non-winning move', () => {
+    let board = createEmptyBoard(15);
+
+    for (let x = 3; x < 7; x += 1) {
+      board = placeStone(board, x, 7, 'white');
+    }
+
+    expect(scoreMove(board, { x: 7, y: 7 }, 'white')).toBeGreaterThan(
+      scoreMove(board, { x: 7, y: 6 }, 'white'),
+    );
+  });
+
+  test('scores blocking an opponent threat above an unrelated move', () => {
+    let board = createEmptyBoard(15);
+
+    for (let x = 4; x < 8; x += 1) {
+      board = placeStone(board, x, 8, 'black');
+    }
+
+    expect(scoreMove(board, { x: 8, y: 8 }, 'white')).toBeGreaterThan(
+      scoreMove(board, { x: 7, y: 7 }, 'white'),
+    );
   });
 });

@@ -4,6 +4,9 @@ import { getWinner } from './rules';
 
 const BOARD_CENTER = 7;
 const CANDIDATE_RADIUS = 1;
+const WIN_SCORE = 1_000_000;
+const BLOCK_SCORE = 500_000;
+const CENTER_WEIGHT = 100;
 
 function getOpponent(player: Player): Player {
   return player === 'black' ? 'white' : 'black';
@@ -89,6 +92,28 @@ function findImmediateMove(board: Board, player: Player): Point | null {
   return null;
 }
 
+function isImmediateWinningMove(board: Board, move: Point, player: Player) {
+  const nextBoard = placeStone(board, move.x, move.y, player);
+
+  return getWinner(nextBoard, move.x, move.y)?.winner === player;
+}
+
+function getCenterPreference(move: Point) {
+  return CENTER_WEIGHT - (Math.abs(move.x - BOARD_CENTER) + Math.abs(move.y - BOARD_CENTER));
+}
+
+export function scoreMove(board: Board, move: Point, player: Player): number {
+  if (isImmediateWinningMove(board, move, player)) {
+    return WIN_SCORE;
+  }
+
+  if (isImmediateWinningMove(board, move, getOpponent(player))) {
+    return BLOCK_SCORE;
+  }
+
+  return getCenterPreference(move);
+}
+
 export function chooseEasyMove(board: Board, aiPlayer: Player): Point {
   const winningMove = findImmediateMove(board, aiPlayer);
 
@@ -102,5 +127,6 @@ export function chooseEasyMove(board: Board, aiPlayer: Player): Point {
     return blockingMove;
   }
 
-  return getCandidateMoves(board)[0] ?? getEmptyCells(board)[0];
+  return [...getCandidateMoves(board)].sort((left, right) => scoreMove(board, right, aiPlayer) - scoreMove(board, left, aiPlayer))[0]
+    ?? getEmptyCells(board)[0];
 }
