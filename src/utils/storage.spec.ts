@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 
-import { loadSnapshot, saveSnapshot } from './storage';
+import { loadSnapshot, saveSnapshot, type PersistedGameState } from './storage';
 
 describe('storage helpers', () => {
   beforeEach(() => {
@@ -8,7 +8,7 @@ describe('storage helpers', () => {
   });
 
   test('round-trips a saved game snapshot', () => {
-    const snapshot = {
+    const snapshot: PersistedGameState = {
       board: [[null]],
       currentPlayer: 'black',
       gameMode: 'pvp',

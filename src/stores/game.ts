@@ -147,7 +147,7 @@ export const useGameStore = defineStore('game', {
 
       this.applyMove(x, y);
 
-      if (this.gameMode === 'pve' && this.gameStatus !== 'finished' && this.currentPlayer === getAiPlayer()) {
+      if (this.gameMode === 'pve' && this.winner === null && this.currentPlayer === getAiPlayer()) {
         const aiMove = chooseEasyMove(this.board, getAiPlayer());
         this.applyMove(aiMove.x, aiMove.y);
       }
