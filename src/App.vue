@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useGameStore } from './stores/game';
 import BoardGrid from './components/BoardGrid.vue';
+import ControlPanel from './components/ControlPanel.vue';
+import HistoryPanel from './components/HistoryPanel.vue';
 import StatusPanel from './components/StatusPanel.vue';
 
 const gameStore = useGameStore();
@@ -11,6 +13,10 @@ function handlePlacePiece(x: number, y: number) {
 
 function handleRestart() {
   gameStore.startGame(gameStore.gameMode);
+}
+
+function handleUndo() {
+  gameStore.undoMove();
 }
 </script>
 
@@ -32,12 +38,26 @@ function handleRestart() {
       :game-status="gameStore.gameStatus"
     />
 
-    <BoardGrid
-      :board="gameStore.board"
-      :disabled="gameStore.gameStatus === 'finished'"
-      :last-move="gameStore.lastMove"
-      :winning-line="gameStore.winningLine"
-      @place-piece="handlePlacePiece"
+    <ControlPanel
+      :can-undo="gameStore.moveHistory.length > 0"
+      :game-mode="gameStore.gameMode"
+      :ai-difficulty="gameStore.aiDifficulty"
+      @undo="handleUndo"
+      @restart="handleRestart"
+      @update:game-mode="gameStore.setGameMode"
+      @update:ai-difficulty="gameStore.setAiDifficulty"
     />
+
+    <section class="play-area">
+      <BoardGrid
+        :board="gameStore.board"
+        :disabled="gameStore.gameStatus === 'finished'"
+        :last-move="gameStore.lastMove"
+        :winning-line="gameStore.winningLine"
+        @place-piece="handlePlacePiece"
+      />
+
+      <HistoryPanel :moves="gameStore.moveHistory" />
+    </section>
   </main>
 </template>

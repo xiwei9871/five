@@ -53,8 +53,17 @@ export const useGameStore = defineStore('game', {
 
       Object.assign(this, state, {
         gameMode: mode,
+        aiDifficulty: this.aiDifficulty,
         gameStatus: 'playing' as GameStatus,
       });
+    },
+
+    setGameMode(mode: GameMode) {
+      this.gameMode = mode;
+    },
+
+    setAiDifficulty(difficulty: Difficulty) {
+      this.aiDifficulty = difficulty;
     },
 
     resetGame() {
@@ -97,11 +106,14 @@ export const useGameStore = defineStore('game', {
     },
 
     undoMove() {
-      const lastMove = this.moveHistory.pop();
+      const undoCount = this.gameMode === 'pve' ? Math.min(2, this.moveHistory.length) : 1;
 
-      if (!lastMove) {
+      if (undoCount === 0) {
         return;
       }
+
+      const removedMoves = this.moveHistory.splice(this.moveHistory.length - undoCount, undoCount);
+      const lastRemovedMove = removedMoves[0];
 
       this.board = rebuildBoard(this.moveHistory);
       this.lastMove =
@@ -111,7 +123,7 @@ export const useGameStore = defineStore('game', {
               y: this.moveHistory[this.moveHistory.length - 1].y,
             }
           : null;
-      this.currentPlayer = lastMove.player;
+      this.currentPlayer = lastRemovedMove.player;
       this.winner = null;
       this.winningLine = [];
       this.gameStatus = this.moveHistory.length === 0 ? 'ready' : 'playing';

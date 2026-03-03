@@ -78,4 +78,32 @@ describe('game store', () => {
     expect(store.moveHistory).toHaveLength(1);
     expect(store.lastMove).toEqual({ x: 7, y: 7 });
   });
+
+  test('stores mode and difficulty changes before restarting into pve', () => {
+    const store = useGameStore();
+
+    store.setGameMode('pve');
+    store.setAiDifficulty('hard');
+    store.startGame(store.gameMode);
+
+    expect(store.gameMode).toBe('pve');
+    expect(store.aiDifficulty).toBe('hard');
+    expect(store.gameStatus).toBe('playing');
+  });
+
+  test('undoes the last two plies in pve mode so the human reclaims the turn', () => {
+    const store = useGameStore();
+
+    store.startGame('pve');
+    store.playMove(7, 7);
+    store.playMove(8, 7);
+
+    store.undoMove();
+
+    expect(store.moveHistory).toHaveLength(0);
+    expect(store.board[7][7]).toBeNull();
+    expect(store.board[7][8]).toBeNull();
+    expect(store.currentPlayer).toBe('black');
+    expect(store.gameStatus).toBe('ready');
+  });
 });
