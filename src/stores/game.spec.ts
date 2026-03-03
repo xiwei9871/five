@@ -229,4 +229,42 @@ describe('game store', () => {
     expect(store.aiDifficulty).toBe('hard');
     expect(store.moveHistory[1]).toMatchObject({ x: 2, y: 2, player: 'white' });
   });
+
+  test('preserves aiDifficulty after hydration and uses it on the next ai turn', async () => {
+    localStorage.setItem(
+      'gobang-game-snapshot',
+      JSON.stringify({
+        board: Array.from({ length: 15 }, () => Array(15).fill(null)),
+        currentPlayer: 'black',
+        gameMode: 'pve',
+        aiDifficulty: 'hard',
+        gameStatus: 'playing',
+        winner: null,
+        moveHistory: [],
+        lastMove: null,
+        winningLine: [],
+      }),
+    );
+
+    vi.doMock('../utils/ai', async () => {
+      const actual = await vi.importActual<typeof import('../utils/ai')>('../utils/ai');
+
+      return {
+        ...actual,
+        chooseEasyMove: vi.fn(() => ({ x: 0, y: 0 })),
+        chooseMediumMove: vi.fn(() => ({ x: 1, y: 1 })),
+        chooseHardMove: vi.fn(() => ({ x: 2, y: 2 })),
+      };
+    });
+
+    const { useGameStore: useMockedStore } = await import('./game');
+    setActivePinia(createPinia());
+    const store = useMockedStore();
+
+    store.hydrate();
+    store.playMove(7, 7);
+
+    expect(store.aiDifficulty).toBe('hard');
+    expect(store.moveHistory[1]).toMatchObject({ x: 2, y: 2, player: 'white' });
+  });
 });
