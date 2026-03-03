@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 
 import type { Player, Point } from '../types/game';
 import { createEmptyBoard, placeStone } from '../utils/board';
+import { chooseEasyMove } from '../utils/ai';
 import { getWinner } from '../utils/rules';
 import { loadSnapshot, saveSnapshot, type PersistedGameState } from '../utils/storage';
 
@@ -59,10 +60,43 @@ function getNextPlayer(player: Player): Player {
   return player === 'black' ? 'white' : 'black';
 }
 
+function getAiPlayer(): Player {
+  return 'white';
+}
+
 export const useGameStore = defineStore('game', {
   state: createInitialState,
 
   actions: {
+    applyMove(x: number, y: number) {
+      this.board = placeStone(this.board, x, y, this.currentPlayer);
+
+      const move: Move = {
+        x,
+        y,
+        player: this.currentPlayer,
+        timestamp: new Date().toISOString(),
+      };
+
+      this.moveHistory.push(move);
+      this.lastMove = { x, y };
+
+      const result = getWinner(this.board, x, y);
+
+      if (result) {
+        this.winner = result.winner;
+        this.winningLine = result.line;
+        this.gameStatus = 'finished';
+        saveSnapshot(toSnapshot(this.$state));
+        return;
+      }
+
+      this.winner = null;
+      this.winningLine = [];
+      this.currentPlayer = getNextPlayer(this.currentPlayer);
+      saveSnapshot(toSnapshot(this.$state));
+    },
+
     startGame(mode: GameMode) {
       const state = createInitialState();
 
@@ -111,32 +145,12 @@ export const useGameStore = defineStore('game', {
         this.gameStatus = 'playing';
       }
 
-      this.board = placeStone(this.board, x, y, this.currentPlayer);
+      this.applyMove(x, y);
 
-      const move: Move = {
-        x,
-        y,
-        player: this.currentPlayer,
-        timestamp: new Date().toISOString(),
-      };
-
-      this.moveHistory.push(move);
-      this.lastMove = { x, y };
-
-      const result = getWinner(this.board, x, y);
-
-      if (result) {
-        this.winner = result.winner;
-        this.winningLine = result.line;
-        this.gameStatus = 'finished';
-        saveSnapshot(toSnapshot(this.$state));
-        return;
+      if (this.gameMode === 'pve' && this.gameStatus !== 'finished' && this.currentPlayer === getAiPlayer()) {
+        const aiMove = chooseEasyMove(this.board, getAiPlayer());
+        this.applyMove(aiMove.x, aiMove.y);
       }
-
-      this.winner = null;
-      this.winningLine = [];
-      this.currentPlayer = getNextPlayer(this.currentPlayer);
-      saveSnapshot(toSnapshot(this.$state));
     },
 
     undoMove() {

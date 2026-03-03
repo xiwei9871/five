@@ -98,13 +98,11 @@ describe('game store', () => {
 
     store.startGame('pve');
     store.playMove(7, 7);
-    store.playMove(8, 7);
 
     store.undoMove();
 
     expect(store.moveHistory).toHaveLength(0);
     expect(store.board[7][7]).toBeNull();
-    expect(store.board[7][8]).toBeNull();
     expect(store.currentPlayer).toBe('black');
     expect(store.gameStatus).toBe('ready');
   });
@@ -163,5 +161,17 @@ describe('game store', () => {
     expect(store.moveHistory).toHaveLength(0);
     expect(store.currentPlayer).toBe('black');
     expect(store.board[7][7]).toBeNull();
+  });
+
+  test('replies automatically in pve mode after the human move', () => {
+    const store = useGameStore();
+
+    store.startGame('pve');
+    store.playMove(7, 7);
+
+    expect(store.moveHistory).toHaveLength(2);
+    expect(store.currentPlayer).toBe('black');
+    expect(store.moveHistory[0]).toMatchObject({ x: 7, y: 7, player: 'black' });
+    expect(store.moveHistory[1].player).toBe('white');
   });
 });
