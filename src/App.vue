@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { onMounted } from 'vue';
+
 import { useGameStore } from './stores/game';
 import BoardGrid from './components/BoardGrid.vue';
 import ControlPanel from './components/ControlPanel.vue';
@@ -6,6 +8,10 @@ import HistoryPanel from './components/HistoryPanel.vue';
 import StatusPanel from './components/StatusPanel.vue';
 
 const gameStore = useGameStore();
+
+onMounted(() => {
+  gameStore.hydrate();
+});
 
 function handlePlacePiece(x: number, y: number) {
   gameStore.playMove(x, y);

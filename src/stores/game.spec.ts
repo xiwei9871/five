@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 import { useGameStore } from './game';
+import { loadSnapshot } from '../utils/storage';
 
 describe('game store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    localStorage.clear();
   });
 
   test('plays alternating moves and records history', () => {
@@ -105,5 +107,61 @@ describe('game store', () => {
     expect(store.board[7][8]).toBeNull();
     expect(store.currentPlayer).toBe('black');
     expect(store.gameStatus).toBe('ready');
+  });
+
+  test('persists successful moves to local storage', () => {
+    const store = useGameStore();
+
+    store.startGame('pvp');
+    store.playMove(7, 7);
+
+    expect(loadSnapshot()).toMatchObject({
+      gameMode: 'pvp',
+      currentPlayer: 'white',
+      gameStatus: 'playing',
+      lastMove: { x: 7, y: 7 },
+      moveHistory: [{ x: 7, y: 7, player: 'black' }],
+    });
+  });
+
+  test('hydrates store state from a saved snapshot', () => {
+    localStorage.setItem(
+      'gobang-game-snapshot',
+      JSON.stringify({
+        board: Array.from({ length: 15 }, (_, rowIndex) =>
+          Array.from({ length: 15 }, (_, colIndex) =>
+            rowIndex === 7 && colIndex === 7 ? 'black' : null,
+          ),
+        ),
+        currentPlayer: 'white',
+        gameMode: 'pvp',
+        aiDifficulty: 'easy',
+        gameStatus: 'playing',
+        winner: null,
+        moveHistory: [{ x: 7, y: 7, player: 'black', timestamp: '2026-03-03T00:00:00.000Z' }],
+        lastMove: { x: 7, y: 7 },
+        winningLine: [],
+      }),
+    );
+
+    const store = useGameStore();
+
+    store.hydrate();
+
+    expect(store.board[7][7]).toBe('black');
+    expect(store.currentPlayer).toBe('white');
+    expect(store.moveHistory).toHaveLength(1);
+  });
+
+  test('falls back to a fresh game when the saved snapshot is invalid', () => {
+    localStorage.setItem('gobang-game-snapshot', '{not-json');
+
+    const store = useGameStore();
+
+    store.hydrate();
+
+    expect(store.moveHistory).toHaveLength(0);
+    expect(store.currentPlayer).toBe('black');
+    expect(store.board[7][7]).toBeNull();
   });
 });

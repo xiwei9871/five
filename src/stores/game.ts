@@ -3,6 +3,7 @@ import { defineStore } from 'pinia';
 import type { Player, Point } from '../types/game';
 import { createEmptyBoard, placeStone } from '../utils/board';
 import { getWinner } from '../utils/rules';
+import { loadSnapshot, saveSnapshot, type PersistedGameState } from '../utils/storage';
 
 type GameMode = 'pvp' | 'pve';
 type Difficulty = 'easy' | 'medium' | 'hard';
@@ -27,6 +28,20 @@ function createInitialState() {
     moveHistory: [] as Move[],
     lastMove: null as Point | null,
     winningLine: [] as Point[],
+  };
+}
+
+function toSnapshot(state: ReturnType<typeof createInitialState>): PersistedGameState {
+  return {
+    board: state.board,
+    currentPlayer: state.currentPlayer,
+    gameMode: state.gameMode,
+    aiDifficulty: state.aiDifficulty,
+    gameStatus: state.gameStatus,
+    winner: state.winner,
+    moveHistory: state.moveHistory,
+    lastMove: state.lastMove,
+    winningLine: state.winningLine,
   };
 }
 
@@ -56,18 +71,35 @@ export const useGameStore = defineStore('game', {
         aiDifficulty: this.aiDifficulty,
         gameStatus: 'playing' as GameStatus,
       });
+      saveSnapshot(toSnapshot(this.$state));
     },
 
     setGameMode(mode: GameMode) {
       this.gameMode = mode;
+      saveSnapshot(toSnapshot(this.$state));
     },
 
     setAiDifficulty(difficulty: Difficulty) {
       this.aiDifficulty = difficulty;
+      saveSnapshot(toSnapshot(this.$state));
     },
 
     resetGame() {
       this.startGame(this.gameMode);
+    },
+
+    hydrate() {
+      try {
+        const snapshot = loadSnapshot();
+
+        if (!snapshot) {
+          return;
+        }
+
+        Object.assign(this, snapshot);
+      } catch {
+        Object.assign(this, createInitialState());
+      }
     },
 
     playMove(x: number, y: number) {
@@ -97,12 +129,14 @@ export const useGameStore = defineStore('game', {
         this.winner = result.winner;
         this.winningLine = result.line;
         this.gameStatus = 'finished';
+        saveSnapshot(toSnapshot(this.$state));
         return;
       }
 
       this.winner = null;
       this.winningLine = [];
       this.currentPlayer = getNextPlayer(this.currentPlayer);
+      saveSnapshot(toSnapshot(this.$state));
     },
 
     undoMove() {
@@ -127,6 +161,7 @@ export const useGameStore = defineStore('game', {
       this.winner = null;
       this.winningLine = [];
       this.gameStatus = this.moveHistory.length === 0 ? 'ready' : 'playing';
+      saveSnapshot(toSnapshot(this.$state));
     },
   },
 });
