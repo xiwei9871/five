@@ -1,9 +1,25 @@
 import { describe, expect, test } from 'vitest';
 
 import { createEmptyBoard, placeStone } from './board';
-import { chooseEasyMove } from './ai';
+import { chooseEasyMove, getCandidateMoves } from './ai';
 
 describe('easy ai', () => {
+  test('returns the center point on an empty board', () => {
+    expect(getCandidateMoves(createEmptyBoard(15))).toEqual([{ x: 7, y: 7 }]);
+  });
+
+  test('only returns empty cells near existing stones', () => {
+    let board = createEmptyBoard(15);
+    board = placeStone(board, 7, 7, 'black');
+
+    const candidates = getCandidateMoves(board);
+
+    expect(candidates).toContainEqual({ x: 6, y: 6 });
+    expect(candidates).toContainEqual({ x: 8, y: 8 });
+    expect(candidates).not.toContainEqual({ x: 0, y: 0 });
+    expect(candidates).not.toContainEqual({ x: 7, y: 7 });
+  });
+
   test('plays a winning move when one is available', () => {
     let board = createEmptyBoard(15);
 
