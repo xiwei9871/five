@@ -16,7 +16,10 @@ function formatPlayer(player: Player) {
 </script>
 
 <template>
-  <section class="history-panel">
+  <section
+    class="history-panel"
+    data-testid="history-panel"
+  >
     <h2>落子记录</h2>
     <ol>
       <li

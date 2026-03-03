@@ -26,7 +26,10 @@ function handleClick(x: number, y: number) {
 </script>
 
 <template>
-  <div class="board-grid">
+  <div
+    class="board-grid"
+    data-testid="board-grid"
+  >
     <button
       v-for="(cell, index) in board.flat()"
       :key="index"

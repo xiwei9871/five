@@ -14,10 +14,14 @@ defineEmits<{
 </script>
 
 <template>
-  <section class="control-panel">
+  <section
+    class="control-panel"
+    data-testid="control-panel"
+  >
     <label class="control-field">
       <span>模式</span>
       <select
+        data-testid="game-mode"
         :value="props.gameMode"
         @change="$emit('update:gameMode', ($event.target as HTMLSelectElement).value as 'pvp' | 'pve')"
       >
@@ -29,6 +33,7 @@ defineEmits<{
     <label class="control-field">
       <span>难度</span>
       <select
+        data-testid="ai-difficulty"
         :value="props.aiDifficulty"
         @change="$emit('update:aiDifficulty', ($event.target as HTMLSelectElement).value as 'easy' | 'medium' | 'hard')"
       >

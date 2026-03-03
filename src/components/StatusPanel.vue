@@ -25,7 +25,10 @@ function getStatusText() {
 </script>
 
 <template>
-  <section class="status-panel">
+  <section
+    class="status-panel"
+    data-testid="status-panel"
+  >
     <p>{{ getStatusText() }}</p>
   </section>
 </template>
