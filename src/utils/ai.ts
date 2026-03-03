@@ -7,6 +7,14 @@ const CANDIDATE_RADIUS = 1;
 const WIN_SCORE = 1_000_000;
 const BLOCK_SCORE = 500_000;
 const CENTER_WEIGHT = 100;
+const MEDIUM_CANDIDATE_LIMIT = 8;
+const HARD_CANDIDATE_LIMIT = 12;
+
+type SearchConfig = {
+  depth: number;
+  candidateLimit: number;
+  useAlphaBeta: boolean;
+};
 
 function getOpponent(player: Player): Player {
   return player === 'black' ? 'white' : 'black';
@@ -114,6 +122,127 @@ export function scoreMove(board: Board, move: Point, player: Player): number {
   return getCenterPreference(move);
 }
 
+function getScoredCandidateMoves(board: Board, player: Player, candidateLimit: number) {
+  return getCandidateMoves(board)
+    .map((move) => ({
+      move,
+      score: scoreMove(board, move, player),
+    }))
+    .sort((left, right) => {
+      if (left.score !== right.score) {
+        return right.score - left.score;
+      }
+
+      return comparePoints(left.move, right.move);
+    })
+    .slice(0, candidateLimit);
+}
+
+function evaluateBoard(board: Board, player: Player) {
+  const playerBest = getScoredCandidateMoves(board, player, 1)[0]?.score ?? 0;
+  const opponentBest = getScoredCandidateMoves(board, getOpponent(player), 1)[0]?.score ?? 0;
+
+  return playerBest - opponentBest;
+}
+
+function minimax(
+  board: Board,
+  rootPlayer: Player,
+  currentPlayer: Player,
+  depth: number,
+  candidateLimit: number,
+  alpha: number,
+  beta: number,
+  useAlphaBeta: boolean,
+): number {
+  if (depth === 0) {
+    return evaluateBoard(board, rootPlayer);
+  }
+
+  const maximizing = currentPlayer === rootPlayer;
+  const candidates = getScoredCandidateMoves(board, currentPlayer, candidateLimit);
+
+  if (candidates.length === 0) {
+    return evaluateBoard(board, rootPlayer);
+  }
+
+  let bestScore = maximizing ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY;
+  let nextAlpha = alpha;
+  let nextBeta = beta;
+
+  for (const { move } of candidates) {
+    const nextBoard = placeStone(board, move.x, move.y, currentPlayer);
+
+    if (getWinner(nextBoard, move.x, move.y)?.winner === currentPlayer) {
+      return currentPlayer === rootPlayer ? WIN_SCORE : -WIN_SCORE;
+    }
+
+    const score = minimax(
+      nextBoard,
+      rootPlayer,
+      getOpponent(currentPlayer),
+      depth - 1,
+      candidateLimit,
+      nextAlpha,
+      nextBeta,
+      useAlphaBeta,
+    );
+
+    if (maximizing) {
+      bestScore = Math.max(bestScore, score);
+      nextAlpha = Math.max(nextAlpha, score);
+    } else {
+      bestScore = Math.min(bestScore, score);
+      nextBeta = Math.min(nextBeta, score);
+    }
+
+    if (useAlphaBeta && nextBeta <= nextAlpha) {
+      break;
+    }
+  }
+
+  return bestScore;
+}
+
+function chooseSearchMove(board: Board, aiPlayer: Player, config: SearchConfig): Point {
+  const winningMove = findImmediateMove(board, aiPlayer);
+
+  if (winningMove) {
+    return winningMove;
+  }
+
+  const blockingMove = findImmediateMove(board, getOpponent(aiPlayer));
+
+  if (blockingMove) {
+    return blockingMove;
+  }
+
+  const candidates = getScoredCandidateMoves(board, aiPlayer, config.candidateLimit);
+  let bestMove = candidates[0]?.move ?? getCandidateMoves(board)[0];
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const { move } of candidates) {
+    const nextBoard = placeStone(board, move.x, move.y, aiPlayer);
+    const score = minimax(
+      nextBoard,
+      aiPlayer,
+      getOpponent(aiPlayer),
+      config.depth - 1,
+      config.candidateLimit,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      config.useAlphaBeta,
+    );
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMove = move;
+    }
+  }
+
+  return bestMove;
+}
+
 export function chooseEasyMove(board: Board, aiPlayer: Player): Point {
   const winningMove = findImmediateMove(board, aiPlayer);
 
@@ -129,4 +258,20 @@ export function chooseEasyMove(board: Board, aiPlayer: Player): Point {
 
   return [...getCandidateMoves(board)].sort((left, right) => scoreMove(board, right, aiPlayer) - scoreMove(board, left, aiPlayer))[0]
     ?? getEmptyCells(board)[0];
+}
+
+export function chooseMediumMove(board: Board, aiPlayer: Player): Point {
+  return chooseSearchMove(board, aiPlayer, {
+    depth: 2,
+    candidateLimit: MEDIUM_CANDIDATE_LIMIT,
+    useAlphaBeta: false,
+  });
+}
+
+export function chooseHardMove(board: Board, aiPlayer: Player): Point {
+  return chooseSearchMove(board, aiPlayer, {
+    depth: 3,
+    candidateLimit: HARD_CANDIDATE_LIMIT,
+    useAlphaBeta: true,
+  });
 }
