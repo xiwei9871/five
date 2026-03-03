@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 import { useGameStore } from './game';
@@ -8,6 +8,11 @@ describe('game store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('../utils/ai');
   });
 
   test('plays alternating moves and records history', () => {
@@ -173,5 +178,55 @@ describe('game store', () => {
     expect(store.currentPlayer).toBe('black');
     expect(store.moveHistory[0]).toMatchObject({ x: 7, y: 7, player: 'black' });
     expect(store.moveHistory[1].player).toBe('white');
+  });
+
+  test('uses medium ai when aiDifficulty is medium', async () => {
+    vi.doMock('../utils/ai', async () => {
+      const actual = await vi.importActual<typeof import('../utils/ai')>('../utils/ai');
+
+      return {
+        ...actual,
+        chooseEasyMove: vi.fn(() => ({ x: 0, y: 0 })),
+        chooseMediumMove: vi.fn(() => ({ x: 1, y: 1 })),
+        chooseHardMove: vi.fn(() => ({ x: 2, y: 2 })),
+      };
+    });
+
+    const { useGameStore: useMockedStore } = await import('./game');
+    setActivePinia(createPinia());
+    const store = useMockedStore();
+
+    store.setGameMode('pve');
+    store.setAiDifficulty('medium');
+    store.startGame('pve');
+    store.playMove(7, 7);
+
+    expect(store.aiDifficulty).toBe('medium');
+    expect(store.moveHistory[1]).toMatchObject({ x: 1, y: 1, player: 'white' });
+  });
+
+  test('uses hard ai when aiDifficulty is hard', async () => {
+    vi.doMock('../utils/ai', async () => {
+      const actual = await vi.importActual<typeof import('../utils/ai')>('../utils/ai');
+
+      return {
+        ...actual,
+        chooseEasyMove: vi.fn(() => ({ x: 0, y: 0 })),
+        chooseMediumMove: vi.fn(() => ({ x: 1, y: 1 })),
+        chooseHardMove: vi.fn(() => ({ x: 2, y: 2 })),
+      };
+    });
+
+    const { useGameStore: useMockedStore } = await import('./game');
+    setActivePinia(createPinia());
+    const store = useMockedStore();
+
+    store.setGameMode('pve');
+    store.setAiDifficulty('hard');
+    store.startGame('pve');
+    store.playMove(7, 7);
+
+    expect(store.aiDifficulty).toBe('hard');
+    expect(store.moveHistory[1]).toMatchObject({ x: 2, y: 2, player: 'white' });
   });
 });

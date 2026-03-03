@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 
 import type { Player, Point } from '../types/game';
 import { createEmptyBoard, placeStone } from '../utils/board';
-import { chooseEasyMove } from '../utils/ai';
+import { chooseEasyMove, chooseHardMove, chooseMediumMove } from '../utils/ai';
 import { getWinner } from '../utils/rules';
 import { loadSnapshot, saveSnapshot, type PersistedGameState } from '../utils/storage';
 
@@ -62,6 +62,21 @@ function getNextPlayer(player: Player): Player {
 
 function getAiPlayer(): Player {
   return 'white';
+}
+
+function chooseAiMove(
+  board: ReturnType<typeof createInitialState>['board'],
+  difficulty: Difficulty,
+  aiPlayer: Player,
+) {
+  switch (difficulty) {
+    case 'medium':
+      return chooseMediumMove(board, aiPlayer);
+    case 'hard':
+      return chooseHardMove(board, aiPlayer);
+    default:
+      return chooseEasyMove(board, aiPlayer);
+  }
 }
 
 export const useGameStore = defineStore('game', {
@@ -148,7 +163,7 @@ export const useGameStore = defineStore('game', {
       this.applyMove(x, y);
 
       if (this.gameMode === 'pve' && this.winner === null && this.currentPlayer === getAiPlayer()) {
-        const aiMove = chooseEasyMove(this.board, getAiPlayer());
+        const aiMove = chooseAiMove(this.board, this.aiDifficulty, getAiPlayer());
         this.applyMove(aiMove.x, aiMove.y);
       }
     },
