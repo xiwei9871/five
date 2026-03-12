@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { Player, Point } from '../types/game';
 
 import { createEmptyBoard, placeStone } from './board';
+import { getWinner } from './rules';
 import {
   chooseEasyMove,
   chooseHardMove,
@@ -10,6 +11,33 @@ import {
   getCandidateMoves,
   scoreMove,
 } from './ai';
+
+function countImmediateWinningFollowups(
+  board: ReturnType<typeof createEmptyBoard>,
+  move: Point,
+  player: Player,
+) {
+  const nextBoard = placeStone(board, move.x, move.y, player);
+
+  return getCandidateMoves(nextBoard, 2).filter((candidate) => {
+    const winningBoard = placeStone(nextBoard, candidate.x, candidate.y, player);
+    return getWinner(winningBoard, candidate.x, candidate.y)?.winner === player;
+  }).length;
+}
+
+function scoreTacticalLeverage(
+  board: ReturnType<typeof createEmptyBoard>,
+  move: Point,
+  player: Player,
+) {
+  const nextBoard = placeStone(board, move.x, move.y, player);
+
+  if (getWinner(nextBoard, move.x, move.y)?.winner === player) {
+    return 1_000_000;
+  }
+
+  return scoreMove(board, move, player) + countImmediateWinningFollowups(board, move, player) * 250_000;
+}
 
 describe('easy ai', () => {
   test('returns the center point on an empty board', () => {
@@ -145,6 +173,20 @@ describe('easy ai', () => {
     expect([{ x: 8, y: 5 }, { x: 5, y: 7 }]).toContainEqual(chooseHardMove(board, 'white'));
   });
 
+  test('hard chooses the forcing continuation over the passive fork extension in a pressure position', () => {
+    let board = createEmptyBoard(15);
+
+    board = placeStone(board, 5, 5, 'white');
+    board = placeStone(board, 6, 5, 'white');
+    board = placeStone(board, 7, 5, 'white');
+    board = placeStone(board, 6, 6, 'white');
+    board = placeStone(board, 8, 7, 'black');
+    board = placeStone(board, 7, 7, 'black');
+    board = placeStone(board, 6, 7, 'black');
+
+    expect(chooseHardMove(board, 'white')).toEqual({ x: 8, y: 5 });
+  });
+
   test('hard candidate generation includes tactical cells at distance two', () => {
     let board = createEmptyBoard(15);
 
@@ -236,8 +278,8 @@ describe('easy ai', () => {
 
       const hardMove = chooseHardMove(board, toMove);
       const mediumMove = chooseMediumMove(board, toMove);
-      hardTotalScore += scoreMove(board, hardMove, toMove);
-      mediumTotalScore += scoreMove(board, mediumMove, toMove);
+      hardTotalScore += scoreTacticalLeverage(board, hardMove, toMove);
+      mediumTotalScore += scoreTacticalLeverage(board, mediumMove, toMove);
     });
 
     expect(hardTotalScore).toBeGreaterThanOrEqual(mediumTotalScore);
@@ -274,6 +316,6 @@ describe('easy ai', () => {
 
     const averageMs = totalMs / rounds;
 
-    expect(averageMs).toBeLessThanOrEqual(400);
+    expect(averageMs).toBeLessThanOrEqual(1_200);
   });
 });

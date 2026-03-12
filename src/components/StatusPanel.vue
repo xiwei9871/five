@@ -5,9 +5,16 @@ const props = defineProps<{
   currentPlayer: Player;
   winner: Player | 'draw' | null;
   gameStatus: 'ready' | 'playing' | 'finished';
+  isAiThinking?: boolean;
+  aiNotice?: string | null;
+  externalEngineStatus?: 'connected' | 'disconnected' | null;
 }>();
 
 function getStatusText() {
+  if (props.isAiThinking) {
+    return 'AI 思考中';
+  }
+
   if (props.gameStatus === 'finished') {
     if (props.winner === 'black') {
       return '黑方获胜';
@@ -30,5 +37,8 @@ function getStatusText() {
     data-testid="status-panel"
   >
     <p>{{ getStatusText() }}</p>
+    <p v-if="props.externalEngineStatus === 'connected'">外部引擎：已连接</p>
+    <p v-else-if="props.externalEngineStatus === 'disconnected'">外部引擎：未连接</p>
+    <p v-if="props.aiNotice">{{ props.aiNotice }}</p>
   </section>
 </template>

@@ -19,9 +19,14 @@ const FOUR_THREE_BONUS = 24_000;
 const LOCAL_DENSITY_WEIGHT = 18;
 const CENTER_WEIGHT = 20;
 const MEDIUM_CANDIDATE_LIMIT = 10;
-const HARD_CANDIDATE_LIMIT = 20;
+const HARD_CANDIDATE_LIMIT = 32;
 const MEDIUM_TIME_BUDGET_MS = 80;
-const HARD_TIME_BUDGET_MS = 500;
+const HARD_TIME_BUDGET_MS = 1_200;
+const ORDERING_PREFERRED_BONUS = 10_000_000;
+const ORDERING_KILLER_BONUS = 2_000_000;
+const ORDERING_HISTORY_WEIGHT = 500;
+const THREAT_EXTENSION_DEPTH = 1;
+const THREAT_EXTENSION_SAMPLE_LIMIT = 8;
 const DIRECTIONS = [
   { x: 1, y: 0 },
   { x: 0, y: 1 },
@@ -37,6 +42,7 @@ type SearchConfig = {
   threatWeight: number;
   timeBudgetMs: number;
   useVcf: boolean;
+  useThreatExtension: boolean;
 };
 
 type PatternSummary = {
@@ -53,6 +59,14 @@ type TTEntry = {
   depth: number;
   score: number;
   bound: 'exact' | 'lower' | 'upper';
+  bestMove: Point | null;
+};
+
+type SearchContext = {
+  deadline: number;
+  tt: Map<number, TTEntry>;
+  killerMoves: Point[][];
+  historyScores: Map<string, number>;
 };
 
 function getOpponent(player: Player): Player {
@@ -90,6 +104,18 @@ function comparePoints(left: Point, right: Point) {
   }
 
   return left.x - right.x;
+}
+
+function toPointKey(move: Point) {
+  return `${move.x},${move.y}`;
+}
+
+function samePoint(left: Point | null | undefined, right: Point | null | undefined) {
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.x === right.x && left.y === right.y;
 }
 
 export function getCandidateMoves(board: Board, radius = DEFAULT_CANDIDATE_RADIUS): Point[] {
@@ -277,13 +303,28 @@ function getScoredCandidateMoves(
   board: Board,
   player: Player,
   config: Pick<SearchConfig, 'candidateLimit' | 'candidateRadius' | 'threatWeight'>,
+  ordering?: {
+    preferredMove?: Point | null;
+    killerMoves?: Point[];
+    historyScores?: Map<string, number>;
+  },
 ) {
   return getCandidateMoves(board, config.candidateRadius)
     .map((move) => ({
       move,
       score: getMoveScore(board, move, player, config.threatWeight),
+      orderingScore:
+        (samePoint(move, ordering?.preferredMove) ? ORDERING_PREFERRED_BONUS : 0) +
+        ((ordering?.killerMoves?.some((killerMove) => samePoint(move, killerMove)) ?? false)
+          ? ORDERING_KILLER_BONUS
+          : 0) +
+        ((ordering?.historyScores?.get(`${player}:${toPointKey(move)}`) ?? 0) * ORDERING_HISTORY_WEIGHT),
     }))
     .sort((left, right) => {
+      if (left.orderingScore !== right.orderingScore) {
+        return right.orderingScore - left.orderingScore;
+      }
+
       if (left.score !== right.score) {
         return right.score - left.score;
       }
@@ -291,6 +332,18 @@ function getScoredCandidateMoves(
       return comparePoints(left.move, right.move);
     })
     .slice(0, config.candidateLimit);
+}
+
+function addKillerMove(killerMoves: Point[][], ply: number, move: Point) {
+  const existing = killerMoves[ply] ?? [];
+  const nextMoves = existing.filter((candidate) => !samePoint(candidate, move));
+  nextMoves.unshift(move);
+  killerMoves[ply] = nextMoves.slice(0, 2);
+}
+
+function addHistoryScore(historyScores: Map<string, number>, player: Player, move: Point, depth: number) {
+  const key = `${player}:${toPointKey(move)}`;
+  historyScores.set(key, (historyScores.get(key) ?? 0) + depth * depth);
 }
 
 function evaluateBoard(board: Board, player: Player, config: Pick<SearchConfig, 'candidateRadius' | 'threatWeight'>) {
@@ -457,6 +510,59 @@ export function findVcfWinningMove(board: Board, player: Player, maxDepth = 6): 
   return findVcfWinningMoveRecursive(board, player, HARD_CANDIDATE_RADIUS, maxDepth);
 }
 
+function findForcedFollowupMove(board: Board, player: Player, radius: number): Point | null {
+  const forcingCandidates = getScoredCandidateMoves(
+    board,
+    player,
+    {
+      candidateLimit: THREAT_EXTENSION_SAMPLE_LIMIT,
+      candidateRadius: radius,
+      threatWeight: 1.2,
+    },
+  );
+
+  for (const { move } of forcingCandidates) {
+    const nextBoard = placeStone(board, move.x, move.y, player);
+
+    if (findImmediateMove(nextBoard, getOpponent(player), radius)) {
+      continue;
+    }
+
+    if (getImmediateWins(nextBoard, player, radius).length >= 2) {
+      return move;
+    }
+  }
+
+  return null;
+}
+
+function hasForcingThreat(board: Board, player: Player, radius: number, threatWeight: number) {
+  const candidates = getScoredCandidateMoves(
+    board,
+    player,
+    {
+      candidateLimit: THREAT_EXTENSION_SAMPLE_LIMIT,
+      candidateRadius: radius,
+      threatWeight,
+    },
+  );
+
+  return candidates.some(({ move }) => {
+    if (isImmediateWinningMove(board, move, player)) {
+      return true;
+    }
+
+    return isForcingThreat(getPatternSummary(board, move, player));
+  });
+}
+
+function shouldExtendThreatSearch(board: Board, currentPlayer: Player, config: SearchConfig) {
+  return (
+    hasForcingThreat(board, currentPlayer, config.candidateRadius, config.threatWeight) ||
+    hasForcingThreat(board, getOpponent(currentPlayer), config.candidateRadius, config.threatWeight)
+  );
+}
+
 function negamax(
   board: Board,
   depth: number,
@@ -464,19 +570,28 @@ function negamax(
   beta: number,
   currentPlayer: Player,
   config: SearchConfig,
-  deadline: number,
-  tt: Map<number, TTEntry>,
+  context: SearchContext,
+  ply: number,
+  extensionDepth: number,
 ): number {
-  if (Date.now() >= deadline) {
+  if (Date.now() >= context.deadline) {
     return evaluateBoard(board, currentPlayer, config);
   }
 
   if (depth === 0) {
+    if (
+      config.useThreatExtension &&
+      extensionDepth > 0 &&
+      shouldExtendThreatSearch(board, currentPlayer, config)
+    ) {
+      return negamax(board, 1, alpha, beta, currentPlayer, config, context, ply, extensionDepth - 1);
+    }
+
     return evaluateBoard(board, currentPlayer, config);
   }
 
   const hash = getBoardHash(board);
-  const cached = tt.get(hash);
+  const cached = context.tt.get(hash);
   const originalAlpha = alpha;
 
   if (cached && cached.depth >= depth) {
@@ -496,9 +611,13 @@ function negamax(
 
   const candidateLimit = Math.max(8, config.candidateLimit - (config.maxDepth - depth));
   const candidates = getScoredCandidateMoves(board, currentPlayer, {
-    candidateLimit,
+    candidateLimit: Math.max(candidateLimit, config.candidateLimit),
     candidateRadius: config.candidateRadius,
     threatWeight: config.threatWeight,
+  }, {
+    preferredMove: cached?.bestMove ?? null,
+    killerMoves: context.killerMoves[ply],
+    historyScores: context.historyScores,
   });
 
   if (candidates.length === 0) {
@@ -506,6 +625,7 @@ function negamax(
   }
 
   let bestScore = Number.NEGATIVE_INFINITY;
+  let bestMove: Point | null = null;
 
   for (const { move } of candidates) {
     const nextBoard = placeStone(board, move.x, move.y, currentPlayer);
@@ -521,15 +641,22 @@ function negamax(
         -alpha,
         getOpponent(currentPlayer),
         config,
-        deadline,
-        tt,
+        context,
+        ply + 1,
+        extensionDepth,
       );
     }
 
-    bestScore = Math.max(bestScore, score);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMove = move;
+    }
+
     alpha = Math.max(alpha, score);
 
     if (config.useAlphaBeta && alpha >= beta) {
+      addKillerMove(context.killerMoves, ply, move);
+      addHistoryScore(context.historyScores, currentPlayer, move, depth);
       break;
     }
   }
@@ -541,7 +668,7 @@ function negamax(
     bound = 'lower';
   }
 
-  tt.set(hash, { depth, score: bestScore, bound });
+  context.tt.set(hash, { depth, score: bestScore, bound, bestMove });
 
   return bestScore;
 }
@@ -560,22 +687,34 @@ function chooseSearchMove(board: Board, aiPlayer: Player, config: SearchConfig):
   }
 
   if (config.useVcf) {
+    const forcedFollowupMove = findForcedFollowupMove(board, aiPlayer, config.candidateRadius);
+    if (forcedFollowupMove) {
+      return forcedFollowupMove;
+    }
+  }
+
+  if (config.useVcf) {
     const vcfMove = findVcfWinningMove(board, aiPlayer, 6);
     if (vcfMove) {
       return vcfMove;
     }
   }
 
-  const deadline = Date.now() + config.timeBudgetMs;
-  const tt = new Map<number, TTEntry>();
+  const context: SearchContext = {
+    deadline: Date.now() + config.timeBudgetMs,
+    tt: new Map<number, TTEntry>(),
+    killerMoves: [],
+    historyScores: new Map<string, number>(),
+  };
   let bestMove = getScoredCandidateMoves(board, aiPlayer, {
     candidateLimit: 1,
     candidateRadius: config.candidateRadius,
     threatWeight: config.threatWeight,
   })[0]?.move ?? getCandidateMoves(board, config.candidateRadius)[0];
+  let pvMove: Point | null = bestMove;
 
   for (let depth = 1; depth <= config.maxDepth; depth += 1) {
-    if (Date.now() >= deadline) {
+    if (Date.now() >= context.deadline) {
       break;
     }
 
@@ -583,13 +722,16 @@ function chooseSearchMove(board: Board, aiPlayer: Player, config: SearchConfig):
       candidateLimit: config.candidateLimit,
       candidateRadius: config.candidateRadius,
       threatWeight: config.threatWeight,
+    }, {
+      preferredMove: pvMove,
+      historyScores: context.historyScores,
     });
 
     let bestAtDepth = bestMove;
     let bestScore = Number.NEGATIVE_INFINITY;
 
     for (const { move } of candidates) {
-      if (Date.now() >= deadline) {
+      if (Date.now() >= context.deadline) {
         break;
       }
 
@@ -601,8 +743,9 @@ function chooseSearchMove(board: Board, aiPlayer: Player, config: SearchConfig):
         Number.POSITIVE_INFINITY,
         getOpponent(aiPlayer),
         { ...config, maxDepth: depth },
-        deadline,
-        tt,
+        context,
+        1,
+        THREAT_EXTENSION_DEPTH,
       );
 
       if (score > bestScore) {
@@ -613,6 +756,7 @@ function chooseSearchMove(board: Board, aiPlayer: Player, config: SearchConfig):
 
     if (bestAtDepth) {
       bestMove = bestAtDepth;
+      pvMove = bestAtDepth;
     }
   }
 
@@ -646,6 +790,7 @@ export function chooseMediumMove(board: Board, aiPlayer: Player): Point {
     threatWeight: 0.95,
     timeBudgetMs: MEDIUM_TIME_BUDGET_MS,
     useVcf: false,
+    useThreatExtension: false,
   });
 }
 
@@ -658,5 +803,6 @@ export function chooseHardMove(board: Board, aiPlayer: Player): Point {
     threatWeight: 1.3,
     timeBudgetMs: HARD_TIME_BUDGET_MS,
     useVcf: true,
+    useThreatExtension: true,
   });
 }

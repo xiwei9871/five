@@ -3,6 +3,7 @@ import { defineStore } from 'pinia';
 import type { Player, Point } from '../types/game';
 import { createEmptyBoard, placeStone } from '../utils/board';
 import { chooseEasyMove, chooseHardMove, chooseMediumMove } from '../utils/ai';
+import { checkRemoteAiHealth, requestRemoteHardMove } from '../utils/remote-ai';
 import { getWinner } from '../utils/rules';
 import { loadSnapshot, saveSnapshot, type PersistedGameState } from '../utils/storage';
 
@@ -29,6 +30,9 @@ function createInitialState() {
     moveHistory: [] as Move[],
     lastMove: null as Point | null,
     winningLine: [] as Point[],
+    isAiThinking: false,
+    aiNotice: null as string | null,
+    externalEngineStatus: null as 'connected' | 'disconnected' | null,
   };
 }
 
@@ -79,6 +83,36 @@ function chooseAiMove(
   }
 }
 
+async function chooseAiMoveWithFallback(
+  board: ReturnType<typeof createInitialState>['board'],
+  difficulty: Difficulty,
+  aiPlayer: Player,
+) {
+  if (difficulty === 'hard') {
+    try {
+      const move = await requestRemoteHardMove({
+        board,
+        currentPlayer: aiPlayer,
+      });
+
+      return {
+        move,
+        source: 'remote' as const,
+      };
+    } catch {
+      return {
+        move: chooseHardMove(board, aiPlayer),
+        source: 'fallback' as const,
+      };
+    }
+  }
+
+  return {
+    move: chooseAiMove(board, difficulty, aiPlayer),
+    source: 'local' as const,
+  };
+}
+
 export const useGameStore = defineStore('game', {
   state: createInitialState,
 
@@ -119,6 +153,9 @@ export const useGameStore = defineStore('game', {
         gameMode: mode,
         aiDifficulty: this.aiDifficulty,
         gameStatus: 'playing' as GameStatus,
+        isAiThinking: false,
+        aiNotice: null,
+        externalEngineStatus: null,
       });
       saveSnapshot(toSnapshot(this.$state));
     },
@@ -133,6 +170,15 @@ export const useGameStore = defineStore('game', {
       saveSnapshot(toSnapshot(this.$state));
     },
 
+    async refreshExternalEngineStatus() {
+      if (this.aiDifficulty !== 'hard') {
+        this.externalEngineStatus = null;
+        return;
+      }
+
+      this.externalEngineStatus = (await checkRemoteAiHealth()) ? 'connected' : 'disconnected';
+    },
+
     resetGame() {
       this.startGame(this.gameMode);
     },
@@ -145,13 +191,17 @@ export const useGameStore = defineStore('game', {
           return;
         }
 
-        Object.assign(this, snapshot);
+        Object.assign(this, snapshot, {
+          isAiThinking: false,
+          aiNotice: null,
+          externalEngineStatus: null,
+        });
       } catch {
         Object.assign(this, createInitialState());
       }
     },
 
-    playMove(x: number, y: number) {
+    async playMove(x: number, y: number) {
       if (this.gameStatus === 'finished') {
         throw new Error('Game is already finished');
       }
@@ -160,11 +210,21 @@ export const useGameStore = defineStore('game', {
         this.gameStatus = 'playing';
       }
 
+      this.aiNotice = null;
       this.applyMove(x, y);
 
       if (this.gameMode === 'pve' && this.winner === null && this.currentPlayer === getAiPlayer()) {
-        const aiMove = chooseAiMove(this.board, this.aiDifficulty, getAiPlayer());
-        this.applyMove(aiMove.x, aiMove.y);
+        this.isAiThinking = true;
+        const aiResult = await chooseAiMoveWithFallback(this.board, this.aiDifficulty, getAiPlayer());
+        this.isAiThinking = false;
+        this.aiNotice = aiResult.source === 'fallback' ? '已回退到本地 AI' : null;
+        this.externalEngineStatus =
+          this.aiDifficulty === 'hard'
+            ? aiResult.source === 'fallback'
+              ? 'disconnected'
+              : 'connected'
+            : null;
+        this.applyMove(aiResult.move.x, aiResult.move.y);
       }
     },
 
@@ -189,6 +249,9 @@ export const useGameStore = defineStore('game', {
       this.currentPlayer = lastRemovedMove.player;
       this.winner = null;
       this.winningLine = [];
+      this.isAiThinking = false;
+      this.aiNotice = null;
+      this.externalEngineStatus = null;
       this.gameStatus = this.moveHistory.length === 0 ? 'ready' : 'playing';
       saveSnapshot(toSnapshot(this.$state));
     },

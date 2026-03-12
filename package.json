@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "ai:server": "node --experimental-strip-types server/http-server.ts",
     "build": "vue-tsc --noEmit && vite build",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",

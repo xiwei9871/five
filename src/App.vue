@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onMounted, onUnmounted, watch } from 'vue';
 
 import { useGameStore } from './stores/game';
 import BoardGrid from './components/BoardGrid.vue';
@@ -8,13 +8,31 @@ import HistoryPanel from './components/HistoryPanel.vue';
 import StatusPanel from './components/StatusPanel.vue';
 
 const gameStore = useGameStore();
+let externalEnginePollId: number | null = null;
 
 onMounted(() => {
   gameStore.hydrate();
+  void gameStore.refreshExternalEngineStatus();
+  externalEnginePollId = window.setInterval(() => {
+    void gameStore.refreshExternalEngineStatus();
+  }, 15000);
 });
 
-function handlePlacePiece(x: number, y: number) {
-  gameStore.playMove(x, y);
+onUnmounted(() => {
+  if (externalEnginePollId !== null) {
+    window.clearInterval(externalEnginePollId);
+  }
+});
+
+watch(
+  () => gameStore.aiDifficulty,
+  () => {
+    void gameStore.refreshExternalEngineStatus();
+  },
+);
+
+async function handlePlacePiece(x: number, y: number) {
+  await gameStore.playMove(x, y);
 }
 
 function handleRestart() {
@@ -42,6 +60,9 @@ function handleUndo() {
       :current-player="gameStore.currentPlayer"
       :winner="gameStore.winner"
       :game-status="gameStore.gameStatus"
+      :is-ai-thinking="gameStore.isAiThinking"
+      :ai-notice="gameStore.aiNotice"
+      :external-engine-status="gameStore.externalEngineStatus"
     />
 
     <ControlPanel
@@ -57,7 +78,7 @@ function handleUndo() {
     <section class="play-area">
       <BoardGrid
         :board="gameStore.board"
-        :disabled="gameStore.gameStatus === 'finished'"
+        :disabled="gameStore.gameStatus === 'finished' || gameStore.isAiThinking"
         :last-move="gameStore.lastMove"
         :winning-line="gameStore.winningLine"
         @place-piece="handlePlacePiece"

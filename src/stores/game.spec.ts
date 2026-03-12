@@ -15,12 +15,12 @@ describe('game store', () => {
     vi.doUnmock('../utils/ai');
   });
 
-  test('plays alternating moves and records history', () => {
+  test('plays alternating moves and records history', async () => {
     const store = useGameStore();
 
     store.startGame('pvp');
-    store.playMove(7, 7);
-    store.playMove(8, 7);
+    await store.playMove(7, 7);
+    await store.playMove(8, 7);
 
     expect(store.board[7][7]).toBe('black');
     expect(store.board[7][8]).toBe('white');
@@ -29,19 +29,19 @@ describe('game store', () => {
     expect(store.lastMove).toEqual({ x: 8, y: 7 });
   });
 
-  test('updates winner and game status after a five-in-a-row move', () => {
+  test('updates winner and game status after a five-in-a-row move', async () => {
     const store = useGameStore();
 
     store.startGame('pvp');
-    store.playMove(0, 0);
-    store.playMove(0, 1);
-    store.playMove(1, 0);
-    store.playMove(1, 1);
-    store.playMove(2, 0);
-    store.playMove(2, 1);
-    store.playMove(3, 0);
-    store.playMove(3, 1);
-    store.playMove(4, 0);
+    await store.playMove(0, 0);
+    await store.playMove(0, 1);
+    await store.playMove(1, 0);
+    await store.playMove(1, 1);
+    await store.playMove(2, 0);
+    await store.playMove(2, 1);
+    await store.playMove(3, 0);
+    await store.playMove(3, 1);
+    await store.playMove(4, 0);
 
     expect(store.winner).toBe('black');
     expect(store.gameStatus).toBe('finished');
@@ -54,29 +54,29 @@ describe('game store', () => {
     ]);
   });
 
-  test('rejects moves after the game is finished', () => {
+  test('rejects moves after the game is finished', async () => {
     const store = useGameStore();
 
     store.startGame('pvp');
-    store.playMove(0, 0);
-    store.playMove(0, 1);
-    store.playMove(1, 0);
-    store.playMove(1, 1);
-    store.playMove(2, 0);
-    store.playMove(2, 1);
-    store.playMove(3, 0);
-    store.playMove(3, 1);
-    store.playMove(4, 0);
+    await store.playMove(0, 0);
+    await store.playMove(0, 1);
+    await store.playMove(1, 0);
+    await store.playMove(1, 1);
+    await store.playMove(2, 0);
+    await store.playMove(2, 1);
+    await store.playMove(3, 0);
+    await store.playMove(3, 1);
+    await store.playMove(4, 0);
 
-    expect(() => store.playMove(4, 4)).toThrow('Game is already finished');
+    await expect(store.playMove(4, 4)).rejects.toThrow('Game is already finished');
   });
 
-  test('undoes the last move in pvp mode', () => {
+  test('undoes the last move in pvp mode', async () => {
     const store = useGameStore();
 
     store.startGame('pvp');
-    store.playMove(7, 7);
-    store.playMove(8, 7);
+    await store.playMove(7, 7);
+    await store.playMove(8, 7);
 
     store.undoMove();
 
@@ -98,11 +98,11 @@ describe('game store', () => {
     expect(store.gameStatus).toBe('playing');
   });
 
-  test('undoes the last two plies in pve mode so the human reclaims the turn', () => {
+  test('undoes the last two plies in pve mode so the human reclaims the turn', async () => {
     const store = useGameStore();
 
     store.startGame('pve');
-    store.playMove(7, 7);
+    await store.playMove(7, 7);
 
     store.undoMove();
 
@@ -112,11 +112,11 @@ describe('game store', () => {
     expect(store.gameStatus).toBe('ready');
   });
 
-  test('persists successful moves to local storage', () => {
+  test('persists successful moves to local storage', async () => {
     const store = useGameStore();
 
     store.startGame('pvp');
-    store.playMove(7, 7);
+    await store.playMove(7, 7);
 
     expect(loadSnapshot()).toMatchObject({
       gameMode: 'pvp',
@@ -168,11 +168,11 @@ describe('game store', () => {
     expect(store.board[7][7]).toBeNull();
   });
 
-  test('replies automatically in pve mode after the human move', () => {
+  test('replies automatically in pve mode after the human move', async () => {
     const store = useGameStore();
 
     store.startGame('pve');
-    store.playMove(7, 7);
+    await store.playMove(7, 7);
 
     expect(store.moveHistory).toHaveLength(2);
     expect(store.currentPlayer).toBe('black');
@@ -199,13 +199,19 @@ describe('game store', () => {
     store.setGameMode('pve');
     store.setAiDifficulty('medium');
     store.startGame('pve');
-    store.playMove(7, 7);
+    await store.playMove(7, 7);
 
     expect(store.aiDifficulty).toBe('medium');
     expect(store.moveHistory[1]).toMatchObject({ x: 1, y: 1, player: 'white' });
   });
 
   test('uses hard ai when aiDifficulty is hard', async () => {
+    vi.doMock('../utils/remote-ai', () => ({
+      requestRemoteHardMove: vi.fn(async () => {
+        throw new Error('remote engine unavailable');
+      }),
+    }));
+
     vi.doMock('../utils/ai', async () => {
       const actual = await vi.importActual<typeof import('../utils/ai')>('../utils/ai');
 
@@ -224,9 +230,67 @@ describe('game store', () => {
     store.setGameMode('pve');
     store.setAiDifficulty('hard');
     store.startGame('pve');
-    store.playMove(7, 7);
+    await store.playMove(7, 7);
 
     expect(store.aiDifficulty).toBe('hard');
+    expect(store.moveHistory[1]).toMatchObject({ x: 2, y: 2, player: 'white' });
+  });
+
+  test('uses the remote engine first when aiDifficulty is hard', async () => {
+    vi.doMock('../utils/remote-ai', () => ({
+      requestRemoteHardMove: vi.fn(async () => ({ x: 3, y: 3 })),
+    }));
+
+    vi.doMock('../utils/ai', async () => {
+      const actual = await vi.importActual<typeof import('../utils/ai')>('../utils/ai');
+
+      return {
+        ...actual,
+        chooseEasyMove: vi.fn(() => ({ x: 0, y: 0 })),
+        chooseMediumMove: vi.fn(() => ({ x: 1, y: 1 })),
+        chooseHardMove: vi.fn(() => ({ x: 2, y: 2 })),
+      };
+    });
+
+    const { useGameStore: useMockedStore } = await import('./game');
+    setActivePinia(createPinia());
+    const store = useMockedStore();
+
+    store.setGameMode('pve');
+    store.setAiDifficulty('hard');
+    store.startGame('pve');
+    await store.playMove(7, 7);
+
+    expect(store.moveHistory[1]).toMatchObject({ x: 3, y: 3, player: 'white' });
+  });
+
+  test('falls back to the local hard ai when the remote engine request fails', async () => {
+    vi.doMock('../utils/remote-ai', () => ({
+      requestRemoteHardMove: vi.fn(async () => {
+        throw new Error('remote engine unavailable');
+      }),
+    }));
+
+    vi.doMock('../utils/ai', async () => {
+      const actual = await vi.importActual<typeof import('../utils/ai')>('../utils/ai');
+
+      return {
+        ...actual,
+        chooseEasyMove: vi.fn(() => ({ x: 0, y: 0 })),
+        chooseMediumMove: vi.fn(() => ({ x: 1, y: 1 })),
+        chooseHardMove: vi.fn(() => ({ x: 2, y: 2 })),
+      };
+    });
+
+    const { useGameStore: useMockedStore } = await import('./game');
+    setActivePinia(createPinia());
+    const store = useMockedStore();
+
+    store.setGameMode('pve');
+    store.setAiDifficulty('hard');
+    store.startGame('pve');
+    await store.playMove(7, 7);
+
     expect(store.moveHistory[1]).toMatchObject({ x: 2, y: 2, player: 'white' });
   });
 
@@ -262,7 +326,7 @@ describe('game store', () => {
     const store = useMockedStore();
 
     store.hydrate();
-    store.playMove(7, 7);
+    await store.playMove(7, 7);
 
     expect(store.aiDifficulty).toBe('hard');
     expect(store.moveHistory[1]).toMatchObject({ x: 2, y: 2, player: 'white' });
