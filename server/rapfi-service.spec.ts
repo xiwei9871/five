@@ -230,4 +230,19 @@ describe('rapfi service', () => {
     expect(service.importLearningData).toHaveBeenCalledWith(new Uint8Array([4, 5, 6]));
     expect(service.resetLearningData).toHaveBeenCalledTimes(1);
   });
+
+  test('http handler returns a structured error when learning export fails', async () => {
+    const handler = createRapfiHttpHandler({
+      ...createMockRapfiService(),
+      exportLearningData: vi.fn(async () => {
+        throw new Error('Rapfi learning database not found');
+      }),
+    });
+
+    const response = await handler(new Request('http://127.0.0.1:8787/api/ai/learning/export', { method: 'GET' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual({ error: 'Rapfi learning database not found' });
+  });
 });

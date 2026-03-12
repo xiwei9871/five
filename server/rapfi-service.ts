@@ -296,50 +296,50 @@ export function createRapfiHttpHandler(service: Pick<
       });
     }
 
-    if (request.method === 'GET' && pathname === '/api/ai/learning/status') {
-      return Response.json(await service.getLearningStatus(), { headers: getCorsHeaders() });
-    }
-
-    if (request.method === 'GET' && pathname === '/api/ai/learning/export') {
-      const database = await service.exportLearningData();
-
-      return new Response(database, {
-        status: 200,
-        headers: {
-          ...getCorsHeaders(),
-          'Content-Disposition': 'attachment; filename="rapfi.db"',
-          'Content-Type': 'application/octet-stream',
-        },
-      });
-    }
-
-    if (request.method === 'POST' && pathname === '/api/ai/learning/import') {
-      await service.importLearningData(new Uint8Array(await request.arrayBuffer()));
-
-      return new Response(null, {
-        status: 204,
-        headers: getCorsHeaders(),
-      });
-    }
-
-    if (request.method === 'POST' && pathname === '/api/ai/learning/reset') {
-      await service.resetLearningData();
-
-      return new Response(null, {
-        status: 204,
-        headers: getCorsHeaders(),
-      });
-    }
-
-    if (pathname !== '/api/ai/rapfi-move') {
-      return Response.json({ error: 'Not found' }, { status: 404, headers: getCorsHeaders() });
-    }
-
-    if (request.method !== 'POST') {
-      return Response.json({ error: 'Method not allowed' }, { status: 405, headers: getCorsHeaders() });
-    }
-
     try {
+      if (request.method === 'GET' && pathname === '/api/ai/learning/status') {
+        return Response.json(await service.getLearningStatus(), { headers: getCorsHeaders() });
+      }
+
+      if (request.method === 'GET' && pathname === '/api/ai/learning/export') {
+        const database = await service.exportLearningData();
+
+        return new Response(database, {
+          status: 200,
+          headers: {
+            ...getCorsHeaders(),
+            'Content-Disposition': 'attachment; filename="rapfi.db"',
+            'Content-Type': 'application/octet-stream',
+          },
+        });
+      }
+
+      if (request.method === 'POST' && pathname === '/api/ai/learning/import') {
+        await service.importLearningData(new Uint8Array(await request.arrayBuffer()));
+
+        return new Response(null, {
+          status: 204,
+          headers: getCorsHeaders(),
+        });
+      }
+
+      if (request.method === 'POST' && pathname === '/api/ai/learning/reset') {
+        await service.resetLearningData();
+
+        return new Response(null, {
+          status: 204,
+          headers: getCorsHeaders(),
+        });
+      }
+
+      if (pathname !== '/api/ai/rapfi-move') {
+        return Response.json({ error: 'Not found' }, { status: 404, headers: getCorsHeaders() });
+      }
+
+      if (request.method !== 'POST') {
+        return Response.json({ error: 'Method not allowed' }, { status: 405, headers: getCorsHeaders() });
+      }
+
       const payload = (await request.json()) as Partial<RapfiRequest>;
 
       if (!Array.isArray(payload.board) || (payload.currentPlayer !== 'black' && payload.currentPlayer !== 'white')) {

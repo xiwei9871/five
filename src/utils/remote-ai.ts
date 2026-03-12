@@ -27,6 +27,10 @@ async function getErrorMessage(response: Response, fallback: string) {
   }
 }
 
+function toBinaryPayload(data: Uint8Array) {
+  return Uint8Array.from(data);
+}
+
 export async function requestRemoteHardMove({
   board,
   currentPlayer,
@@ -116,7 +120,7 @@ export async function exportRemoteLearningData(): Promise<Uint8Array> {
 export async function importRemoteLearningData(data: Uint8Array): Promise<void> {
   const response = await fetch(RAPFI_LEARNING_IMPORT_URL, {
     method: 'POST',
-    body: data,
+    body: toBinaryPayload(data),
   });
 
   if (!response.ok) {

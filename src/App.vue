@@ -56,7 +56,9 @@ async function handleLearningReset() {
 
 async function handleLearningExport() {
   const bytes = await gameStore.exportLearningData();
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+  const url = URL.createObjectURL(
+    new Blob([Uint8Array.from(bytes)], { type: 'application/octet-stream' }),
+  );
   const link = document.createElement('a');
   link.href = url;
   link.download = 'rapfi.db';
