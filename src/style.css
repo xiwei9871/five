@@ -75,29 +75,118 @@ button {
 }
 
 .board-grid {
+  --board-cell-size: min(2.5rem, 5.5vw);
+  --board-line-color: rgba(91, 54, 21, 0.75);
   display: grid;
-  grid-template-columns: repeat(15, minmax(1.75rem, 2.5rem));
-  gap: 1px;
-  padding: 0.75rem;
-  background: rgba(125, 78, 36, 0.4);
+  grid-template-columns: repeat(15, var(--board-cell-size));
+  padding: 0.85rem;
+  background: #f4d19b;
   border-radius: 1rem;
+  box-shadow: 0 12px 30px rgba(91, 54, 21, 0.16);
 }
 
 .board-cell {
-  width: min(2.5rem, 5.5vw);
-  height: min(2.5rem, 5.5vw);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--board-cell-size);
+  height: var(--board-cell-size);
   border: 0;
-  background: #f4d19b;
+  padding: 0;
+  background: transparent;
   color: #24130a;
-  font-size: 1.1rem;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.board-cell-line {
+  position: absolute;
+  background: var(--board-line-color);
+  pointer-events: none;
+}
+
+.board-cell-line-horizontal {
+  width: 100%;
+  height: 1px;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.board-cell-line-vertical {
+  width: 1px;
+  height: 100%;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.board-cell-star {
+  position: absolute;
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 999px;
+  background: rgba(91, 54, 21, 0.92);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.board-cell-win-line {
+  position: absolute;
+  background: rgba(245, 214, 89, 0.95);
+  box-shadow: 0 0 10px rgba(245, 214, 89, 0.55);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.board-cell-win-line-horizontal {
+  width: 100%;
+  height: 0.34rem;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.board-cell-win-line-vertical {
+  width: 0.34rem;
+  height: 100%;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.board-cell-win-line-diagonal-down,
+.board-cell-win-line-diagonal-up {
+  width: 145%;
+  height: 0.34rem;
+  left: 50%;
+  top: 50%;
+  transform-origin: center;
+}
+
+.board-cell-win-line-diagonal-down {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.board-cell-win-line-diagonal-up {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.board-piece {
+  position: relative;
+  z-index: 2;
 }
 
 .board-cell-last {
-  background: #f0b85f;
+  background: radial-gradient(circle, rgba(240, 184, 95, 0.4) 0%, rgba(240, 184, 95, 0) 68%);
 }
 
 .board-cell-win {
-  background: #ffdf7b;
+  background: radial-gradient(circle, rgba(255, 223, 123, 0.35) 0%, rgba(255, 223, 123, 0) 75%);
+}
+
+.board-cell-win .board-piece {
+  text-shadow: 0 0 12px rgba(245, 214, 89, 0.9);
 }
 
 .history-panel {
