@@ -6,26 +6,32 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { createRapfiHttpHandler, createRapfiService } from './rapfi-service';
 
-function createMockChildProcess(outputLine = '9,9') {
+function createMockChildProcess(outputLines: string | string[] = '9,9') {
   const stdout = new EventEmitter();
   const stderr = new EventEmitter();
+  const queuedLines = Array.isArray(outputLines) ? [...outputLines] : [outputLines];
   const stdin = {
     write: vi.fn((chunk: string) => {
       if (chunk.includes('BOARD')) {
         queueMicrotask(() => {
-          stdout.emit('data', `${outputLine}\n`);
+          stdout.emit('data', `${queuedLines.shift() ?? '9,9'}\n`);
         });
       }
     }),
   };
-
-  return {
-    stdout,
-    stderr,
-    stdin,
-    kill: vi.fn(),
-    on: vi.fn(),
+  const childProcess = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+    stdin: typeof stdin;
+    kill: ReturnType<typeof vi.fn>;
   };
+
+  childProcess.stdout = stdout;
+  childProcess.stderr = stderr;
+  childProcess.stdin = stdin;
+  childProcess.kill = vi.fn();
+
+  return childProcess;
 }
 
 describe('rapfi service', () => {
@@ -62,6 +68,31 @@ describe('rapfi service', () => {
         currentPlayer: 'white',
       }),
     ).resolves.toEqual({ x: 9, y: 9 });
+  });
+
+  test('reuses a persistent rapfi child process across move requests', async () => {
+    const spawn = vi.fn(() => createMockChildProcess(['9,9', '8,8']));
+    const service = createRapfiService({
+      binaryPath: '/tmp/rapfi',
+      existsSync: () => true,
+      spawn,
+    });
+
+    await expect(
+      service.getBestMove({
+        board: Array.from({ length: 15 }, () => Array(15).fill(null)),
+        currentPlayer: 'white',
+      }),
+    ).resolves.toEqual({ x: 9, y: 9 });
+
+    await expect(
+      service.getBestMove({
+        board: Array.from({ length: 15 }, () => Array(15).fill(null)),
+        currentPlayer: 'white',
+      }),
+    ).resolves.toEqual({ x: 8, y: 8 });
+
+    expect(spawn).toHaveBeenCalledTimes(1);
   });
 
   test('http handler returns a structured response payload', async () => {

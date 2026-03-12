@@ -91,7 +91,7 @@ move_horizon = 64
 [database]
 # Automatic enable the database
 # 自动开启数据库
-enable_by_default = false
+enable_by_default = true
 
 # Database type (Options are [yixindb])
 # 数据库类型

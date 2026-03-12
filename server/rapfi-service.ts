@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { dirname } from 'node:path';
 
 import type { Board, Player, Point } from '../src/types/game.ts';
 
@@ -18,6 +19,7 @@ type RapfiServiceOptions = {
 
 type RapfiService = {
   getBestMove(request: RapfiRequest): Promise<Point>;
+  dispose(): void;
 };
 
 const ALLOWED_ORIGIN = 'http://localhost:5173';
@@ -68,6 +70,7 @@ function wireResponseListener(childProcess: SpawnResult) {
     const cleanup = () => {
       childProcess.stdout?.off('data', handleStdout);
       childProcess.stderr?.off('data', handleStderr);
+      childProcess.off('exit', handleExit);
     };
 
     const handleStdout = (chunk: Buffer | string) => {
@@ -105,8 +108,14 @@ function wireResponseListener(childProcess: SpawnResult) {
       reject(new Error(String(chunk).trim() || 'Rapfi process error'));
     };
 
+    const handleExit = () => {
+      cleanup();
+      reject(new Error('Rapfi process exited unexpectedly'));
+    };
+
     childProcess.stdout?.on('data', handleStdout);
     childProcess.stderr?.on('data', handleStderr);
+    childProcess.on('exit', handleExit);
   });
 }
 
@@ -115,30 +124,76 @@ export function createRapfiService({
   existsSync: checkExists = existsSync,
   spawn: spawnProcess = spawn,
 }: RapfiServiceOptions): RapfiService {
+  let childProcess: SpawnResult | null = null;
+  let requestQueue = Promise.resolve();
+
+  function stopProcess() {
+    const process = childProcess;
+    childProcess = null;
+    process?.kill();
+  }
+
+  function getOrStartProcess() {
+    if (childProcess) {
+      return childProcess;
+    }
+
+    const process = spawnProcess(binaryPath, [], {
+      cwd: dirname(binaryPath),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    process.on('exit', () => {
+      if (childProcess === process) {
+        childProcess = null;
+      }
+    });
+    childProcess = process;
+
+    return process;
+  }
+
+  async function requestBestMove({ board }: RapfiRequest) {
+    const process = getOrStartProcess();
+    const responsePromise = wireResponseListener(process);
+
+    process.stdin?.write('START 15\n');
+    process.stdin?.write('INFO timeout_turn 1000\n');
+    process.stdin?.write('BOARD\n');
+
+    for (const command of toBoardCommands(board)) {
+      process.stdin?.write(`${command}\n`);
+    }
+
+    process.stdin?.write('DONE\n');
+
+    return responsePromise;
+  }
+
   return {
-    async getBestMove({ board, currentPlayer }: RapfiRequest) {
+    async getBestMove(request: RapfiRequest) {
       if (!checkExists(binaryPath)) {
         throw new Error('Rapfi binary not found');
       }
 
-      const childProcess = spawnProcess(binaryPath, [], {
-        stdio: ['pipe', 'pipe', 'pipe'],
+      const queuedRequest = requestQueue.then(async () => {
+        try {
+          return await requestBestMove(request);
+        } catch (error) {
+          stopProcess();
+          return requestBestMove(request);
+        }
       });
 
-      const responsePromise = wireResponseListener(childProcess);
-      childProcess.stdin?.write('START 15\n');
-      childProcess.stdin?.write('INFO timeout_turn 1000\n');
-      childProcess.stdin?.write('BOARD\n');
+      requestQueue = queuedRequest.then(
+        () => undefined,
+        () => undefined,
+      );
 
-      for (const command of toBoardCommands(board)) {
-        childProcess.stdin?.write(`${command}\n`);
-      }
+      return queuedRequest;
+    },
 
-      childProcess.stdin?.write('DONE\n');
-
-      const move = await responsePromise;
-      childProcess.kill();
-      return move;
+    dispose() {
+      stopProcess();
     },
   };
 }
