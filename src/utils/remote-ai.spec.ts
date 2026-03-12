@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { checkRemoteAiHealth, requestRemoteHardMove } from './remote-ai';
+import {
+  checkRemoteAiHealth,
+  exportRemoteLearningData,
+  fetchRemoteLearningStatus,
+  importRemoteLearningData,
+  requestRemoteHardMove,
+  resetRemoteLearningData,
+} from './remote-ai';
 
 describe('remote hard ai client', () => {
   afterEach(() => {
@@ -96,5 +103,64 @@ describe('remote hard ai client', () => {
     );
 
     await expect(checkRemoteAiHealth()).resolves.toBe(false);
+  });
+
+  test('fetches the remote learning status from the local rapfi service', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ available: true, hasDatabase: true, updatedAt: '2026-03-12T00:00:00.000Z' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    await expect(fetchRemoteLearningStatus()).resolves.toEqual({
+      available: true,
+      hasDatabase: true,
+      updatedAt: '2026-03-12T00:00:00.000Z',
+    });
+    expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:8787/api/ai/learning/status', {
+      method: 'GET',
+    });
+  });
+
+  test('exports imports and resets remote learning data through the local rapfi service', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith('/export')) {
+          return new Response(new Uint8Array([1, 2, 3]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/octet-stream' },
+          });
+        }
+
+        if (String(input).endsWith('/import')) {
+          return new Response(null, { status: 204 });
+        }
+
+        if (String(input).endsWith('/reset')) {
+          return new Response(null, { status: 204 });
+        }
+
+        return new Response(JSON.stringify({ error: 'unexpected endpoint' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+
+    await expect(exportRemoteLearningData()).resolves.toEqual(new Uint8Array([1, 2, 3]));
+    await expect(importRemoteLearningData(new Uint8Array([4, 5, 6]))).resolves.toBeUndefined();
+    await expect(resetRemoteLearningData()).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:8787/api/ai/learning/import', {
+      method: 'POST',
+      body: new Uint8Array([4, 5, 6]),
+    });
+    expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:8787/api/ai/learning/reset', {
+      method: 'POST',
+    });
   });
 });

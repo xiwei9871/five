@@ -331,4 +331,49 @@ describe('game store', () => {
     expect(store.aiDifficulty).toBe('hard');
     expect(store.moveHistory[1]).toMatchObject({ x: 2, y: 2, player: 'white' });
   });
+
+  test('loads hard-learning status and resets it through the remote service', async () => {
+    vi.doMock('../utils/remote-ai', () => ({
+      requestRemoteHardMove: vi.fn(async () => ({ x: 3, y: 3 })),
+      checkRemoteAiHealth: vi.fn(async () => true),
+      fetchRemoteLearningStatus: vi
+        .fn()
+        .mockResolvedValueOnce({
+          available: true,
+          hasDatabase: true,
+          updatedAt: '2026-03-12T00:00:00.000Z',
+        })
+        .mockResolvedValueOnce({
+          available: true,
+          hasDatabase: false,
+          updatedAt: null,
+        }),
+      resetRemoteLearningData: vi.fn(async () => undefined),
+      exportRemoteLearningData: vi.fn(async () => new Uint8Array([1, 2, 3])),
+      importRemoteLearningData: vi.fn(async () => undefined),
+    }));
+
+    const remoteAi = await import('../utils/remote-ai');
+    const { useGameStore: useMockedStore } = await import('./game');
+    setActivePinia(createPinia());
+    const store = useMockedStore();
+
+    await store.refreshLearningStatus();
+
+    expect(store.learningStatus).toEqual({
+      available: true,
+      hasDatabase: true,
+      updatedAt: '2026-03-12T00:00:00.000Z',
+    });
+
+    await store.resetLearningData();
+
+    expect(remoteAi.resetRemoteLearningData).toHaveBeenCalledTimes(1);
+    expect(remoteAi.fetchRemoteLearningStatus).toHaveBeenCalledTimes(2);
+    expect(store.learningStatus).toEqual({
+      available: true,
+      hasDatabase: false,
+      updatedAt: null,
+    });
+  });
 });

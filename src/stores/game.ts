@@ -1,9 +1,17 @@
 import { defineStore } from 'pinia';
 
 import type { Player, Point } from '../types/game';
+import type { LearningStatus } from '../types/learning';
 import { createEmptyBoard, placeStone } from '../utils/board';
 import { chooseEasyMove, chooseHardMove, chooseMediumMove } from '../utils/ai';
-import { checkRemoteAiHealth, requestRemoteHardMove } from '../utils/remote-ai';
+import {
+  checkRemoteAiHealth,
+  exportRemoteLearningData,
+  fetchRemoteLearningStatus,
+  importRemoteLearningData,
+  requestRemoteHardMove,
+  resetRemoteLearningData,
+} from '../utils/remote-ai';
 import { getWinner } from '../utils/rules';
 import { loadSnapshot, saveSnapshot, type PersistedGameState } from '../utils/storage';
 
@@ -18,6 +26,11 @@ type Move = Point & {
 };
 
 const BOARD_SIZE = 15;
+const DEFAULT_LEARNING_STATUS: LearningStatus = {
+  available: false,
+  hasDatabase: false,
+  updatedAt: null,
+};
 
 function createInitialState() {
   return {
@@ -33,6 +46,8 @@ function createInitialState() {
     isAiThinking: false,
     aiNotice: null as string | null,
     externalEngineStatus: null as 'connected' | 'disconnected' | null,
+    learningStatus: { ...DEFAULT_LEARNING_STATUS },
+    learningBusy: false,
   };
 }
 
@@ -179,6 +194,46 @@ export const useGameStore = defineStore('game', {
       this.externalEngineStatus = (await checkRemoteAiHealth()) ? 'connected' : 'disconnected';
     },
 
+    async refreshLearningStatus() {
+      try {
+        this.learningStatus = await fetchRemoteLearningStatus();
+      } catch {
+        this.learningStatus = { ...DEFAULT_LEARNING_STATUS };
+      }
+    },
+
+    async resetLearningData() {
+      this.learningBusy = true;
+
+      try {
+        await resetRemoteLearningData();
+        await this.refreshLearningStatus();
+      } finally {
+        this.learningBusy = false;
+      }
+    },
+
+    async exportLearningData() {
+      this.learningBusy = true;
+
+      try {
+        return await exportRemoteLearningData();
+      } finally {
+        this.learningBusy = false;
+      }
+    },
+
+    async importLearningData(data: Uint8Array) {
+      this.learningBusy = true;
+
+      try {
+        await importRemoteLearningData(data);
+        await this.refreshLearningStatus();
+      } finally {
+        this.learningBusy = false;
+      }
+    },
+
     resetGame() {
       this.startGame(this.gameMode);
     },
@@ -195,6 +250,8 @@ export const useGameStore = defineStore('game', {
           isAiThinking: false,
           aiNotice: null,
           externalEngineStatus: null,
+          learningStatus: { ...DEFAULT_LEARNING_STATUS },
+          learningBusy: false,
         });
       } catch {
         Object.assign(this, createInitialState());
@@ -252,6 +309,7 @@ export const useGameStore = defineStore('game', {
       this.isAiThinking = false;
       this.aiNotice = null;
       this.externalEngineStatus = null;
+      this.learningBusy = false;
       this.gameStatus = this.moveHistory.length === 0 ? 'ready' : 'playing';
       saveSnapshot(toSnapshot(this.$state));
     },
