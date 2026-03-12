@@ -5,6 +5,7 @@ import { useGameStore } from './stores/game';
 import BoardGrid from './components/BoardGrid.vue';
 import ControlPanel from './components/ControlPanel.vue';
 import HistoryPanel from './components/HistoryPanel.vue';
+import LearningPanel from './components/LearningPanel.vue';
 import StatusPanel from './components/StatusPanel.vue';
 
 const gameStore = useGameStore();
@@ -13,6 +14,9 @@ let externalEnginePollId: number | null = null;
 onMounted(() => {
   gameStore.hydrate();
   void gameStore.refreshExternalEngineStatus();
+  if (gameStore.aiDifficulty === 'hard') {
+    void gameStore.refreshLearningStatus();
+  }
   externalEnginePollId = window.setInterval(() => {
     void gameStore.refreshExternalEngineStatus();
   }, 15000);
@@ -28,6 +32,9 @@ watch(
   () => gameStore.aiDifficulty,
   () => {
     void gameStore.refreshExternalEngineStatus();
+    if (gameStore.aiDifficulty === 'hard') {
+      void gameStore.refreshLearningStatus();
+    }
   },
 );
 
@@ -41,6 +48,28 @@ function handleRestart() {
 
 function handleUndo() {
   gameStore.undoMove();
+}
+
+async function handleLearningReset() {
+  await gameStore.resetLearningData();
+}
+
+async function handleLearningExport() {
+  const bytes = await gameStore.exportLearningData();
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'rapfi.db';
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function handleLearningImport(file: File | null) {
+  if (!file) {
+    return;
+  }
+
+  await gameStore.importLearningData(new Uint8Array(await file.arrayBuffer()));
 }
 </script>
 
@@ -73,6 +102,15 @@ function handleUndo() {
       @restart="handleRestart"
       @update:game-mode="gameStore.setGameMode"
       @update:ai-difficulty="gameStore.setAiDifficulty"
+    />
+
+    <LearningPanel
+      v-if="gameStore.aiDifficulty === 'hard'"
+      :status="gameStore.learningStatus"
+      :busy="gameStore.learningBusy"
+      @export="handleLearningExport"
+      @import="handleLearningImport"
+      @reset="handleLearningReset"
     />
 
     <section class="play-area">

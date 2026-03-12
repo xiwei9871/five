@@ -55,6 +55,44 @@ button {
   box-shadow: 0 10px 30px rgba(91, 54, 21, 0.12);
 }
 
+.learning-panel {
+  width: min(44rem, 100%);
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  background: rgba(255, 248, 230, 0.82);
+  box-shadow: 0 10px 30px rgba(91, 54, 21, 0.12);
+}
+
+.learning-panel-header {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.learning-panel-header h2,
+.learning-panel-header p,
+.learning-panel-meta {
+  margin: 0;
+}
+
+.learning-panel-meta {
+  color: rgba(91, 54, 21, 0.78);
+}
+
+.learning-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.learning-panel-import {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .control-field {
   display: grid;
   gap: 0.35rem;

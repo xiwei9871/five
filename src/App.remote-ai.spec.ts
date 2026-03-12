@@ -13,6 +13,14 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+function createLearningStatus(hasDatabase = true) {
+  return {
+    available: true,
+    hasDatabase,
+    updatedAt: hasDatabase ? '2026-03-12T00:00:00.000Z' : null,
+  };
+}
+
 describe('App remote hard ai integration', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -31,6 +39,10 @@ describe('App remote hard ai integration', () => {
     vi.doMock('./utils/remote-ai', () => ({
       requestRemoteHardMove: vi.fn(() => deferred.promise),
       checkRemoteAiHealth: vi.fn(async () => true),
+      fetchRemoteLearningStatus: vi.fn(async () => createLearningStatus()),
+      resetRemoteLearningData: vi.fn(async () => undefined),
+      exportRemoteLearningData: vi.fn(async () => new Uint8Array([1, 2, 3])),
+      importRemoteLearningData: vi.fn(async () => undefined),
     }));
 
     vi.doMock('./utils/ai', async () => {
@@ -71,6 +83,10 @@ describe('App remote hard ai integration', () => {
         throw new Error('rapfi offline');
       }),
       checkRemoteAiHealth: vi.fn(async () => false),
+      fetchRemoteLearningStatus: vi.fn(async () => createLearningStatus()),
+      resetRemoteLearningData: vi.fn(async () => undefined),
+      exportRemoteLearningData: vi.fn(async () => new Uint8Array([1, 2, 3])),
+      importRemoteLearningData: vi.fn(async () => undefined),
     }));
 
     vi.doMock('./utils/ai', async () => {
@@ -111,6 +127,10 @@ describe('App remote hard ai integration', () => {
         healthChecks += 1;
         return healthChecks >= 2;
       }),
+      fetchRemoteLearningStatus: vi.fn(async () => createLearningStatus()),
+      resetRemoteLearningData: vi.fn(async () => undefined),
+      exportRemoteLearningData: vi.fn(async () => new Uint8Array([1, 2, 3])),
+      importRemoteLearningData: vi.fn(async () => undefined),
     }));
 
     vi.doMock('./utils/ai', async () => {
@@ -139,5 +159,38 @@ describe('App remote hard ai integration', () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain('外部引擎：已连接');
+  });
+
+  test('shows hard-learning controls and triggers a reset action in hard mode', async () => {
+    vi.doMock('./utils/remote-ai', () => ({
+      requestRemoteHardMove: vi.fn(async () => ({ x: 8, y: 8 })),
+      checkRemoteAiHealth: vi.fn(async () => true),
+      fetchRemoteLearningStatus: vi
+        .fn()
+        .mockResolvedValueOnce(createLearningStatus(true))
+        .mockResolvedValueOnce(createLearningStatus(false)),
+      resetRemoteLearningData: vi.fn(async () => undefined),
+      exportRemoteLearningData: vi.fn(async () => new Uint8Array([1, 2, 3])),
+      importRemoteLearningData: vi.fn(async () => undefined),
+    }));
+
+    const remoteAi = await import('./utils/remote-ai');
+    const { default: App } = await import('./App.vue');
+    const wrapper = mount(App, {
+      global: {
+        plugins: [createPinia()],
+      },
+    });
+
+    await wrapper.find('[data-testid="ai-difficulty"]').setValue('hard');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Hard 学习库');
+
+    await wrapper.find('[data-action="learning-reset"]').trigger('click');
+    await flushPromises();
+
+    expect(remoteAi.resetRemoteLearningData).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain('尚未生成经验库');
   });
 });
