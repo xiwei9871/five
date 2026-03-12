@@ -1,6 +1,9 @@
 // @vitest-environment node
 
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
@@ -32,6 +35,21 @@ function createMockChildProcess(outputLines: string | string[] = '9,9') {
   childProcess.kill = vi.fn();
 
   return childProcess;
+}
+
+function createMockRapfiService() {
+  return {
+    getBestMove: vi.fn(async () => ({ x: 10, y: 11 })),
+    getLearningStatus: vi.fn(async () => ({
+      available: true,
+      hasDatabase: true,
+      updatedAt: '2026-03-12T00:00:00.000Z',
+    })),
+    exportLearningData: vi.fn(async () => new Uint8Array([1, 2, 3])),
+    importLearningData: vi.fn(async () => undefined),
+    resetLearningData: vi.fn(async () => undefined),
+    dispose: vi.fn(),
+  };
 }
 
 describe('rapfi service', () => {
@@ -95,10 +113,44 @@ describe('rapfi service', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 
+  test('tracks rapfi learning database status and supports export import reset', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'rapfi-learning-'));
+    const binaryPath = join(tempDir, 'rapfi');
+    const databasePath = join(tempDir, 'rapfi.db');
+    writeFileSync(binaryPath, 'binary');
+
+    try {
+      const service = createRapfiService({
+        binaryPath,
+        databasePath,
+      });
+
+      await expect(service.getLearningStatus()).resolves.toEqual({
+        available: true,
+        hasDatabase: false,
+        updatedAt: null,
+      });
+
+      await service.importLearningData(new Uint8Array([1, 2, 3]));
+      await expect(service.exportLearningData()).resolves.toEqual(new Uint8Array([1, 2, 3]));
+      await expect(service.getLearningStatus()).resolves.toMatchObject({
+        available: true,
+        hasDatabase: true,
+      });
+
+      await service.resetLearningData();
+      await expect(service.getLearningStatus()).resolves.toEqual({
+        available: true,
+        hasDatabase: false,
+        updatedAt: null,
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test('http handler returns a structured response payload', async () => {
-    const handler = createRapfiHttpHandler({
-      getBestMove: vi.fn(async () => ({ x: 10, y: 11 })),
-    });
+    const handler = createRapfiHttpHandler(createMockRapfiService());
 
     const request = new Request('http://127.0.0.1:8787/api/ai/rapfi-move', {
       method: 'POST',
@@ -119,9 +171,7 @@ describe('rapfi service', () => {
   });
 
   test('http handler accepts browser preflight requests for the local frontend origin', async () => {
-    const handler = createRapfiHttpHandler({
-      getBestMove: vi.fn(async () => ({ x: 10, y: 11 })),
-    });
+    const handler = createRapfiHttpHandler(createMockRapfiService());
 
     const request = new Request('http://127.0.0.1:8787/api/ai/rapfi-move', {
       method: 'OPTIONS',
@@ -140,14 +190,44 @@ describe('rapfi service', () => {
   });
 
   test('http handler exposes a simple health endpoint', async () => {
-    const handler = createRapfiHttpHandler({
-      getBestMove: vi.fn(async () => ({ x: 10, y: 11 })),
-    });
+    const handler = createRapfiHttpHandler(createMockRapfiService());
 
     const response = await handler(new Request('http://127.0.0.1:8787/api/ai/health', { method: 'GET' }));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
     expect(payload).toEqual({ ok: true });
+  });
+
+  test('http handler exposes rapfi learning management endpoints', async () => {
+    const service = createMockRapfiService();
+    const handler = createRapfiHttpHandler(service);
+
+    const statusResponse = await handler(
+      new Request('http://127.0.0.1:8787/api/ai/learning/status', { method: 'GET' }),
+    );
+    const exportResponse = await handler(
+      new Request('http://127.0.0.1:8787/api/ai/learning/export', { method: 'GET' }),
+    );
+    const importResponse = await handler(
+      new Request('http://127.0.0.1:8787/api/ai/learning/import', {
+        method: 'POST',
+        body: new Uint8Array([4, 5, 6]),
+      }),
+    );
+    const resetResponse = await handler(
+      new Request('http://127.0.0.1:8787/api/ai/learning/reset', { method: 'POST' }),
+    );
+
+    await expect(statusResponse.json()).resolves.toEqual({
+      available: true,
+      hasDatabase: true,
+      updatedAt: '2026-03-12T00:00:00.000Z',
+    });
+    await expect(exportResponse.arrayBuffer()).resolves.toEqual(new Uint8Array([1, 2, 3]).buffer);
+    expect(importResponse.status).toBe(204);
+    expect(resetResponse.status).toBe(204);
+    expect(service.importLearningData).toHaveBeenCalledWith(new Uint8Array([4, 5, 6]));
+    expect(service.resetLearningData).toHaveBeenCalledTimes(1);
   });
 });

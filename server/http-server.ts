@@ -5,6 +5,14 @@ import { pathToFileURL } from 'node:url';
 import { createRapfiHttpHandler, createRapfiService } from './rapfi-service.ts';
 
 const PORT = 8787;
+const KNOWN_PATHS = new Set([
+  '/api/ai/health',
+  '/api/ai/rapfi-move',
+  '/api/ai/learning/status',
+  '/api/ai/learning/export',
+  '/api/ai/learning/import',
+  '/api/ai/learning/reset',
+]);
 
 export function getNodeResponseHeaders(response: Response) {
   return Object.fromEntries(response.headers.entries());
@@ -19,7 +27,7 @@ export function createRapfiNodeServer() {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`);
 
-    if (url.pathname !== '/api/ai/rapfi-move' && url.pathname !== '/api/ai/health') {
+    if (!KNOWN_PATHS.has(url.pathname)) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
       return;
@@ -38,7 +46,7 @@ export function createRapfiNodeServer() {
       });
 
       const response = await handler(request);
-      const body = await response.text();
+      const body = Buffer.from(await response.arrayBuffer());
 
       res.writeHead(response.status, getNodeResponseHeaders(response));
       res.end(body);
